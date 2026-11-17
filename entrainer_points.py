@@ -22,7 +22,7 @@ from sklearn.svm import SVC
 
 import config
 from outils import (charger_points, charger_sequences, decouper, matrice_confusion,
-                    FICHIER_POINTS, CLASSES_GESTE)
+                    il_y_a_des_points, CLASSES_GESTE)
 
 
 def augmenter(X, y, n=3, bruit=0.02, graine=0):
@@ -61,7 +61,7 @@ def entrainer(test_personne=None, rapide=False, log=print):
 
     rapide=True : seulement le kNN (instantané), pour le réentraînement pendant le direct.
     """
-    if not FICHIER_POINTS.exists():
+    if not il_y_a_des_points():
         log("Aucune donnée : enregistrez d'abord des lettres.")
         return None
     X, y, pers = charger_points()

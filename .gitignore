@@ -3,16 +3,18 @@
 __pycache__/
 *.tmp
 
-# Signes enregistrés et captures : photos de mains, à ne pas publier
-donnees/
+# Captures d'écran et résultats (peuvent montrer des visages)
 figures/
+
+# Les signes enregistrés (donnees/) SONT partagés : un fichier par séance, sans conflit
+donnees/personne.txt
 
 # Téléchargés automatiquement au premier lancement
 references/
 sign_mnist/
 modeles/hand_landmarker.task
 
-# Modèles appris sur nos signes (refaits avec « Mettre à jour » sur le PC des enregistrements)
+# Modèles appris sur nos signes (chacun les refait avec « Mettre à jour » après un Pull)
 modeles/points.joblib
 modeles/gestes.joblib
 modeles/cnn_affine.keras

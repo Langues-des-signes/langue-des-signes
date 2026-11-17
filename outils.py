@@ -1,4 +1,7 @@
-"""Fonctions partagées : lecture de nos données, découpage entraînement / test, figures."""
+"""Fonctions partagées : lecture de nos données, découpage entraînement / test, figures.
+
+Données : donnees/points/<séance>.csv, donnees/sequences/<séance>.csv et
+donnees/images/<lettre>/<séance>_*.jpg (une séance = un lancement de l'appli)."""
 import csv
 
 import cv2
@@ -9,10 +12,51 @@ import matplotlib.pyplot as plt
 
 import config
 
-FICHIER_POINTS = config.DOSSIER_DONNEES / "points.csv"          # lettres statiques
-FICHIER_SEQUENCES = config.DOSSIER_DONNEES / "sequences.csv"    # gestes J, Z et « autre »
-DOSSIER_IMAGES = config.DOSSIER_DONNEES / "images"              # pour affiner le CNN
+# Un fichier par séance : chaque personne ajoute ses propres fichiers sans jamais modifier
+# ceux des autres, ce qui permet de partager les données avec Git sans conflit.
+DOSSIER_POINTS = config.DOSSIER_DONNEES / "points"          # lettres statiques
+DOSSIER_SEQUENCES = config.DOSSIER_DONNEES / "sequences"    # gestes J, Z et « autre »
+DOSSIER_IMAGES = config.DOSSIER_DONNEES / "images"          # pour affiner le CNN
 CLASSES_GESTE = config.LETTRES_MOUVEMENT + [config.AUTRE]
+
+# Ancien format (un seul gros fichier) : converti automatiquement au premier lancement
+_ANCIENS = {DOSSIER_POINTS: config.DOSSIER_DONNEES / "points.csv",
+            DOSSIER_SEQUENCES: config.DOSSIER_DONNEES / "sequences.csv"}
+
+
+def _convertir_ancien_format(dossier):
+    """Découpe l'ancien fichier unique (points.csv ou sequences.csv) en un fichier par
+    séance, puis le supprime."""
+    ancien = _ANCIENS[dossier]
+    if not ancien.exists():
+        return
+    with open(ancien, encoding="utf-8") as f:
+        lignes = [l for l in csv.reader(f) if len(l) >= 2]
+    dossier.mkdir(parents=True, exist_ok=True)
+    par_seance = {}
+    for l in lignes:
+        par_seance.setdefault(l[0], []).append(l)
+    for seance, ls in par_seance.items():
+        with open(dossier / f"{seance}.csv", "a", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerows(ls)
+    ancien.unlink()
+
+
+def fichiers(dossier):
+    """Les fichiers CSV d'un dossier de données (un par séance), triés."""
+    _convertir_ancien_format(dossier)
+    return sorted(dossier.glob("*.csv")) if dossier.exists() else []
+
+
+def lire_lignes(dossier):
+    """Toutes les lignes de toutes les séances d'un dossier de données."""
+    for fichier in fichiers(dossier):
+        with open(fichier, encoding="utf-8") as f:
+            yield from csv.reader(f)
+
+
+def il_y_a_des_points():
+    return len(fichiers(DOSSIER_POINTS)) > 0
 
 
 def image_vers_28(image_bgr):
@@ -43,29 +87,26 @@ def decouper(personnes, y, test_personne=None, part_test=0.2, graine=0):
 
 
 def charger_points():
-    """Lit donnees/points.csv. Renvoie X (n x 63), y (n), personnes (n)."""
+    """Lit donnees/points/*.csv. Renvoie X (n x 63), y (n), personnes (n)."""
     X, y, pers = [], [], []
-    with open(FICHIER_POINTS, encoding="utf-8") as f:
-        for ligne in csv.reader(f):
-            if len(ligne) != 65 or ligne[1] not in config.LETTRES:
-                continue   # ligne abîmée : on l'ignore
-            pers.append(ligne[0])
-            y.append(config.LETTRES.index(ligne[1]))
-            X.append([float(v) for v in ligne[2:]])
+    for ligne in lire_lignes(DOSSIER_POINTS):
+        if len(ligne) != 65 or ligne[1] not in config.LETTRES:
+            continue   # ligne abîmée : on l'ignore
+        pers.append(ligne[0])
+        y.append(config.LETTRES.index(ligne[1]))
+        X.append([float(v) for v in ligne[2:]])
     return np.array(X, np.float32).reshape(-1, 63), np.array(y, int), np.array(pers)
 
 
 def charger_sequences():
-    """Lit donnees/sequences.csv. Renvoie X, y (indice dans CLASSES_GESTE), personnes."""
+    """Lit donnees/sequences/*.csv. Renvoie X, y (indice dans CLASSES_GESTE), personnes."""
     X, y, pers = [], [], []
-    if FICHIER_SEQUENCES.exists():
-        with open(FICHIER_SEQUENCES, encoding="utf-8") as f:
-            for ligne in csv.reader(f):
-                if len(ligne) < 3 or ligne[1] not in CLASSES_GESTE:
-                    continue
-                pers.append(ligne[0])
-                y.append(CLASSES_GESTE.index(ligne[1]))
-                X.append([float(v) for v in ligne[2:]])
+    for ligne in lire_lignes(DOSSIER_SEQUENCES):
+        if len(ligne) < 3 or ligne[1] not in CLASSES_GESTE:
+            continue
+        pers.append(ligne[0])
+        y.append(CLASSES_GESTE.index(ligne[1]))
+        X.append([float(v) for v in ligne[2:]])
     if not X:
         return np.zeros((0, 0), np.float32), np.zeros(0, int), np.array([], dtype=str)
     return np.array(X, np.float32), np.array(y, int), np.array(pers)
@@ -134,8 +175,8 @@ def enregistrer_exemple(image_bgr, main, lettre, personne, numero, seance):
     x1, y1, x2, y2 = main["boite"]
     if x2 - x1 < 20 or y2 - y1 < 20:
         return False
-    config.DOSSIER_DONNEES.mkdir(exist_ok=True)
-    with open(FICHIER_POINTS, "a", newline="", encoding="utf-8") as f:
+    DOSSIER_POINTS.mkdir(parents=True, exist_ok=True)
+    with open(DOSSIER_POINTS / f"{personne}.csv", "a", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow([personne, lettre] +
                                [f"{v:.5f}" for v in mains.caracteristiques(main)])
     if numero % config.IMAGE_TOUTES_LES == 0:
@@ -149,9 +190,9 @@ def enregistrer_exemple(image_bgr, main, lettre, personne, numero, seance):
 
 
 def enregistrer_sequence(caracteristiques, lettre, personne):
-    """Enregistre un geste (J, Z ou « autre ») dans sequences.csv."""
-    config.DOSSIER_DONNEES.mkdir(exist_ok=True)
-    with open(FICHIER_SEQUENCES, "a", newline="", encoding="utf-8") as f:
+    """Enregistre un geste (J, Z ou « autre ») dans donnees/sequences/<séance>.csv."""
+    DOSSIER_SEQUENCES.mkdir(parents=True, exist_ok=True)
+    with open(DOSSIER_SEQUENCES / f"{personne}.csv", "a", newline="", encoding="utf-8") as f:
         csv.writer(f).writerow([personne, lettre] + [f"{v:.5f}" for v in caracteristiques])
 
 
@@ -159,14 +200,11 @@ def compter_exemples():
     """Nombre d'exemples par personne et par lettre : {personne: {lettre: n}}.
     Pour J, Z et « autre », c'est le nombre de gestes enregistrés."""
     comptes = {}
-    for fichier in (FICHIER_POINTS, FICHIER_SEQUENCES):
-        if not fichier.exists():
-            continue
-        with open(fichier, encoding="utf-8") as f:
-            for ligne in csv.reader(f):
-                if len(ligne) >= 2:
-                    d = comptes.setdefault(ligne[0], {})
-                    d[ligne[1]] = d.get(ligne[1], 0) + 1
+    for dossier in (DOSSIER_POINTS, DOSSIER_SEQUENCES):
+        for ligne in lire_lignes(dossier):
+            if len(ligne) >= 2:
+                d = comptes.setdefault(ligne[0], {})
+                d[ligne[1]] = d.get(ligne[1], 0) + 1
     return comptes
 
 
@@ -174,7 +212,9 @@ def supprimer(personne, lettre=None):
     """Supprime les exemples d'une personne (d'une seule lettre si lettre est donnée) :
     lignes des fichiers CSV et images. Renvoie le nombre d'exemples supprimés."""
     n = 0
-    for fichier in (FICHIER_POINTS, FICHIER_SEQUENCES):
+    for dossier in (DOSSIER_POINTS, DOSSIER_SEQUENCES):
+        fichiers(dossier)                       # convertit l'ancien format si besoin
+        fichier = dossier / f"{personne}.csv"
         if not fichier.exists():
             continue
         with open(fichier, encoding="utf-8") as f:
@@ -182,7 +222,9 @@ def supprimer(personne, lettre=None):
         garder = [l for l in lignes if not (len(l) >= 2 and l[0] == personne
                                             and (lettre is None or l[1] == lettre))]
         n += len(lignes) - len(garder)
-        if len(garder) != len(lignes):
+        if not garder:
+            fichier.unlink()                    # plus rien dans cette séance
+        elif len(garder) != len(lignes):
             temporaire = fichier.with_suffix(".tmp")
             with open(temporaire, "w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerows(garder)
@@ -202,11 +244,9 @@ def tout_supprimer():
     figures sont gardés. Renvoie le nombre d'exemples effacés."""
     import shutil
     n = sum(sum(d.values()) for d in compter_exemples().values())
-    for fichier in (FICHIER_POINTS, FICHIER_SEQUENCES):
-        if fichier.exists():
-            fichier.unlink()
-    if DOSSIER_IMAGES.exists():
-        shutil.rmtree(DOSSIER_IMAGES)
+    for dossier in (DOSSIER_POINTS, DOSSIER_SEQUENCES, DOSSIER_IMAGES):
+        if dossier.exists():
+            shutil.rmtree(dossier)
     for nom in ("points.joblib", "gestes.joblib", "cnn_affine.keras"):
         f = config.DOSSIER_MODELES / nom
         if f.exists():
