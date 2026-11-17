@@ -1,0 +1,21 @@
+# Environnement Python (recréé par installer.bat)
+.venv/
+__pycache__/
+*.tmp
+
+# Signes enregistrés et captures : photos de mains, à ne pas publier
+donnees/
+figures/
+
+# Téléchargés automatiquement au premier lancement
+references/
+sign_mnist/
+modeles/hand_landmarker.task
+
+# Modèles appris sur nos signes (refaits avec « Mettre à jour » sur le PC des enregistrements)
+modeles/points.joblib
+modeles/gestes.joblib
+modeles/cnn_affine.keras
+
+# Notes personnelles pour Claude
+CONTEXTE.md
